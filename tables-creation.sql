@@ -5,6 +5,7 @@
 
 CREATE TABLE Weather (
     Weather_ID INT PRIMARY KEY,
+    Weather_Station VARCHAR(10),
     Measure_Date DATE,
     Measure_Time TIME,
     Temp_Celsius DECIMAL(5,2),
