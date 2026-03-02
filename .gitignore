@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.env/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local datasets and generated outputs
+input/*.csv
+input/*.geojson
+input/*.shp
+input/*.shx
+input/*.dbf
+input/*.prj
+input/*.cpg
+input/*.gpkg
+output/*.csv
+
+# Keep folder structure
+!input/.gitkeep
+!output/.gitkeep
