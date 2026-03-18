@@ -2,28 +2,20 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point
 import os
-import requests
-import json
+import re
 import warnings
-from datetime import datetime, timedelta
-warnings.filterwarnings('ignore') # Unterdrückt Warnungen bei der Entfernungsberechnung
+warnings.filterwarnings('ignore')
 
 # --- Konfiguration ---
 CRASHES_FILE = 'data/crashes.csv'
 VEHICLES_FILE = 'data/vehicles.csv'
 PERSONS_FILE = 'data/persons.csv'
+WEATHER_FILE = 'data/jfk_weather_cleaned.csv'
 PRECINCTS_FILE = 'data/precincts.geojson'  
 OUTPUT_DIR = 'output_tables/'
 
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
-
-# --- Wetterstationen (Die 3 echten Sensoren) ---
-STATIONS = [
-    {"Weather_Station": "KLGA", "name": "LaGuardia Airport", "lat": 40.7769, "lon": -73.8740},
-    {"Weather_Station": "KJFK", "name": "JFK Airport", "lat": 40.6413, "lon": -73.7781},
-    {"Weather_Station": "KEWR", "name": "Newark Airport", "lat": 40.6895, "lon": -74.1745}
-]
 
 # --- Hilfsfunktionen ---
 def get_fixed_vehicle_category(v_type):
@@ -40,18 +32,14 @@ def get_fixed_vehicle_category(v_type):
     if any(k in v for k in ['PASS', 'SEDAN', 'SEDN', '4 DR', '2 DR', 'COUPE', 'CONV', 'CAR', 'AUTO', '4D', '2D', '4S', 'SDN']): return 'Passenger Vehicle'
     return 'Other / Unknown'
 
-def get_wmo_condition_text(code):
-    if pd.isna(code): return None
-    if code == 0: return 'Clear sky'
-    if code in [1, 2, 3]: return 'Partly cloudy / Overcast'
-    if code in [45, 48]: return 'Fog'
-    if code in [51, 53, 55, 56, 57]: return 'Drizzle'
-    if code in [61, 63, 65, 66, 67]: return 'Rain'
-    if code in [71, 73, 75, 77]: return 'Snow'
-    if code in [80, 81, 82]: return 'Rain showers'
-    if code in [85, 86]: return 'Snow showers'
-    if code in [95, 96, 99]: return 'Thunderstorm'
-    return 'Unknown / Other'
+def clean_kaggle_numeric(val):
+    """Entfernt Buchstaben aus Kaggle NOAA-Daten (z.B. 'T' für Trace oder '10.00V')"""
+    if pd.isna(val): return 0.0
+    val_str = str(val).strip().upper()
+    if val_str == 'T': return 0.0 # 'Trace' (Spuren) von Regen = 0
+    cleaned = re.sub(r'[^\d.]', '', val_str)
+    try: return float(cleaned) if cleaned else 0.0
+    except: return 0.0
 
 # ==============================================================================
 
@@ -59,6 +47,7 @@ print("1. Lese CSV-Daten ein...")
 crashes_df = pd.read_csv(CRASHES_FILE, low_memory=False)
 vehicles_df = pd.read_csv(VEHICLES_FILE, low_memory=False)
 persons_df = pd.read_csv(PERSONS_FILE, low_memory=False)
+weather_raw_df = pd.read_csv(WEATHER_FILE, low_memory=False)
 
 crashes_df.columns = crashes_df.columns.str.lower().str.replace(' ', '_')
 vehicles_df.columns = vehicles_df.columns.str.lower().str.replace(' ', '_')
@@ -71,11 +60,11 @@ borough_df['Borough_ID'] = range(1, len(borough_df) + 1)
 borough_df.to_csv(f'{OUTPUT_DIR}Borough.csv', index=False)
 
 def get_borough_id_from_precinct(p_id):
-    if 1 <= p_id <= 39: return 1 # Manhattan
-    elif 40 <= p_id <= 59: return 2 # Bronx
-    elif 60 <= p_id <= 99: return 3 # Brooklyn
-    elif 100 <= p_id <= 119: return 4 # Queens
-    elif 120 <= p_id <= 139: return 5 # Staten Island
+    if 1 <= p_id <= 39: return 1 
+    elif 40 <= p_id <= 59: return 2 
+    elif 60 <= p_id <= 99: return 3 
+    elif 100 <= p_id <= 119: return 4 
+    elif 120 <= p_id <= 139: return 5 
     return None
 
 precincts_gdf = gpd.read_file(PRECINCTS_FILE)
@@ -91,126 +80,66 @@ precinct_out = precinct_out[precinct_out['Precinct_ID'] > 0]
 precinct_out['Borough_ID'] = precinct_out['Borough_ID'].astype('Int64') 
 precinct_out.to_csv(f'{OUTPUT_DIR}Precinct.csv', index=False)
 
-print("3. Filtere Unfälle & berechne räumliche Nähe zu Precincts und Wetterstationen...")
+
+print("3. Filtere Unfälle & berechne räumliche Nähe zu Precincts...")
 crashes_df = crashes_df.dropna(subset=['latitude', 'longitude'])
 crashes_df['clean_date'] = crashes_df['crash_date'].astype(str).str[:10]
 crashes_df['crash_datetime'] = pd.to_datetime(crashes_df['clean_date'] + ' ' + crashes_df['crash_time'].astype(str), errors='coerce')
 crashes_df = crashes_df.dropna(subset=['crash_datetime']).sort_values('crash_datetime')
 
-# Unfälle als Geodaten
 geometry = [Point(xy) for xy in zip(crashes_df['longitude'], crashes_df['latitude'])]
 crashes_gdf = gpd.GeoDataFrame(crashes_df, geometry=geometry, crs="EPSG:4326")
 
 if precincts_gdf.crs is None: precincts_gdf.set_crs(epsg=4326, inplace=True)
 else: precincts_gdf = precincts_gdf.to_crs(epsg=4326)
 
-# Welcher Precinct?
 crashes_mapped = gpd.sjoin(crashes_gdf, precincts_gdf[['Precinct_ID', 'Borough_ID', 'geometry']], how="left", predicate="within")
 crashes_mapped = crashes_mapped.dropna(subset=['Borough_ID']) 
 crashes_mapped['Borough_ID'] = crashes_mapped['Borough_ID'].astype(int)
-
-# ---> NEU: Lösche die Hilfsspalte vom ersten Join <---
-if 'index_right' in crashes_mapped.columns:
-    crashes_mapped = crashes_mapped.drop(columns=['index_right'])
-
-# --- NEU: Finde die absolut nächste Wetterstation für jeden Unfall ---
-stations_df = pd.DataFrame(STATIONS)
-
-# --- NEU: Finde die absolut nächste Wetterstation für jeden Unfall ---
-# Stationen als Geodaten anlegen
-stations_df = pd.DataFrame(STATIONS)
-stations_geom = [Point(xy) for xy in zip(stations_df['lon'], stations_df['lat'])]
-stations_gdf = gpd.GeoDataFrame(stations_df, geometry=stations_geom, crs="EPSG:4326")
-
-# Um genaue Distanzen in Metern zu berechnen, projizieren wir temporär auf das lokale NYC Koordinatensystem (EPSG:2263)
-crashes_proj = crashes_mapped.to_crs(epsg=2263)
-stations_proj = stations_gdf.to_crs(epsg=2263)
-
-# Räumlicher Join: Finde für jeden Unfallpunkt die exakt nächste Wetterstation
-crashes_with_station = gpd.sjoin_nearest(crashes_proj, stations_proj[['Weather_Station', 'geometry']], how='left')
-# Übertrage die zugeordnete Station auf unsere Haupttabelle
-crashes_mapped['Weather_Station'] = crashes_with_station['Weather_Station'].values
+if 'index_right' in crashes_mapped.columns: crashes_mapped = crashes_mapped.drop(columns=['index_right'])
 
 
-print("4. Lade Wetterdaten von Open-Meteo für die 3 Stationen herunter...")
-
-# Hole echtes Datumsobjekt (verhindert MM/DD/YYYY Fehler)
-start_dt = crashes_mapped['crash_datetime'].min()
-end_dt = crashes_mapped['crash_datetime'].max()
-
-# Open-Meteo Archive hat Daten nur bis ca. 3-5 Tage in der Vergangenheit
-max_archive_date = datetime.now() - timedelta(days=5)
-
-if end_dt > max_archive_date:
-    print(f"   -> Info: Setze Enddatum von {end_dt.date()} auf {max_archive_date.date()} zurück (API-Limit)")
-    end_dt = max_archive_date
-
-# Formatiere strikt als YYYY-MM-DD für die API
-start_date = start_dt.strftime('%Y-%m-%d')
-end_date = end_dt.strftime('%Y-%m-%d')
-
-print(f"   -> Abfrage-Zeitraum: {start_date} bis {end_date}")
-
-all_weather_data = []
-
-for station in STATIONS:
-    station_id = station['Weather_Station']
-    print(f"   -> Lade Wetter für Station {station_id} ({station['name']})...")
-    url = f"https://archive-api.open-meteo.com/v1/archive?latitude={station['lat']}&longitude={station['lon']}&start_date={start_date}&end_date={end_date}&hourly=temperature_2m,precipitation,snow_depth,weather_code&timezone=America%2FNew_York"    
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        hourly = data['hourly']
-        
-        temp_df = pd.DataFrame({
-            'weather_datetime': pd.to_datetime(hourly['time']),
-            'Temp_Celsius': hourly['temperature_2m'],
-            'Precipitation_mm': hourly['precipitation'],
-            'Snow_Depth_m': hourly['snow_depth'],
-            'Visibility_m': None, # Gibt es im historischen Archiv nicht
-            'Wind_Gust_kmh': None, # Gibt es im historischen Archiv nicht
-            'Weather_Code': hourly['weather_code'],
-            'Weather_Station': station_id  
-        })
-        all_weather_data.append(temp_df)
-    else:
-        # NEU: Falls es wieder crasht, drucken wir den genauen Grund der API aus!
-        print(f"Fehler bei Open-Meteo API für {station_id}: {response.status_code}")
-        print(f"Details vom Server: {response.text}")
-
-if not all_weather_data:
-    raise ValueError("Es konnten absolut keine Wetterdaten geladen werden. Skript abgebrochen!")
-
-weather_raw_df = pd.concat(all_weather_data, ignore_index=True)
-weather_raw_df = weather_raw_df.sort_values('weather_datetime')
+print("4. Verarbeite die JFK Kaggle Wetterdaten...")
+weather_raw_df['weather_datetime'] = pd.to_datetime(weather_raw_df['DATE'], errors='coerce')
+weather_raw_df = weather_raw_df.dropna(subset=['weather_datetime']).sort_values('weather_datetime')
 
 weather_df = pd.DataFrame()
 weather_df['Weather_ID'] = range(1, len(weather_raw_df) + 1)
-weather_df['Weather_Station'] = weather_raw_df['Weather_Station'] 
+weather_df['Weather_Station'] = 'KJFK' # Hardcoded, da alles aus der JFK Datei kommt
 weather_df['Measure_Date'] = weather_raw_df['weather_datetime'].dt.date
 weather_df['Measure_Time'] = weather_raw_df['weather_datetime'].dt.time
-weather_df['Temp_Celsius'] = pd.to_numeric(weather_raw_df['Temp_Celsius'], errors='coerce').round(2)
-weather_df['Precipitation_Inches'] = (pd.to_numeric(weather_raw_df['Precipitation_mm'], errors='coerce') * 0.0393701).round(2)
-weather_df['Snow_Depth_Inches'] = (pd.to_numeric(weather_raw_df['Snow_Depth_m'], errors='coerce') * 39.3701).fillna(0).round(2)
 
-# Da es in den historischen Daten keine Sichtweite und Windböen gibt, setzen wir sie für die Datenbank direkt auf "leer" (None)
-weather_df['Visibility_Miles'] = None
-weather_df['Wind_Gust_Speed_MPH'] = None
+# Temperatur: Fahrenheit in Celsius umrechnen
+temp_f = weather_raw_df['HOURLYDRYBULBTEMPF'].apply(clean_kaggle_numeric)
+weather_df['Temp_Celsius'] = ((temp_f - 32) * 5.0/9.0).round(2)
+
+# Niederschlag (bereits in Inches, bereinigt "T" Werte)
+weather_df['Precipitation_Inches'] = weather_raw_df['HOURLYPrecip'].apply(clean_kaggle_numeric).round(2)
+
+# Sichtweite (in Meilen, bereinigt Buchstabenränder)
+weather_df['Visibility_Miles'] = weather_raw_df['HOURLYVISIBILITY'].apply(clean_kaggle_numeric).round(2)
+
+# Wind Speed als Fallback für Gusts (da Gusts fehlen)
+weather_df['Wind_Gust_Speed_MPH'] = weather_raw_df['HOURLYWindSpeed'].apply(clean_kaggle_numeric).round(2)
+
+# Fehlende Metriken in der Kaggle Datei
+weather_df['Snow_Depth_Inches'] = 0.0
+weather_df['Weather_Condition_Text'] = None
 
 weather_df.to_csv(f'{OUTPUT_DIR}Weather.csv', index=False)
 weather_raw_df['Weather_ID'] = weather_df['Weather_ID'].values
 
 
-print("5. Verbinde Unfälle mit dem Wetter der nächstgelegenen Station...")
+print("5. Verbinde Unfälle zeitlich mit dem JFK-Wetter...")
 crashes_mapped = crashes_mapped.sort_values('crash_datetime')
 weather_raw_df = weather_raw_df.sort_values('weather_datetime')
 
+# Simpler As-Of Merge nur über die Zeit
 crashes_final = pd.merge_asof(
     crashes_mapped, 
-    weather_raw_df[['weather_datetime', 'Weather_ID', 'Weather_Station']], 
+    weather_raw_df[['weather_datetime', 'Weather_ID']], 
     left_on='crash_datetime', 
     right_on='weather_datetime', 
-    by='Weather_Station', # Vergleicht nur Stationen, die im Schritt 3 gematcht wurden
     direction='nearest',
     tolerance=pd.Timedelta('2 hours')
 )
@@ -271,4 +200,4 @@ person_out.rename(columns={'person_id': 'Person_ID', 'collision_id': 'Collision_
 person_out.dropna(subset=['Person_ID'], inplace=True)
 person_out[['Person_ID', 'Collision_ID', 'Vehicle_ID', 'Person_Type', 'Person_Role', 'Person_Injury', 'Person_Age', 'Person_Sex']].to_csv(f'{OUTPUT_DIR}Person.csv', index=False)
 
-print(f"Fertig! Die hochpräzisen Tabellen liegen bereit im Ordner '{OUTPUT_DIR}'.")
+print(f"Bäm! Fertig! Alle sauberen Tabellen liegen in '{OUTPUT_DIR}'.")
