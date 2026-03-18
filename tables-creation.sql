@@ -19,7 +19,6 @@ CREATE TABLE Weather (
 CREATE TABLE Vehicle_Type (
     Vehicle_Type_ID INT PRIMARY KEY,
     Vehicle_Type_Name VARCHAR(100),
-    Vehicle_Type_Category VARCHAR(100)
 );
 
 CREATE TABLE Contributing_Factor (
@@ -64,7 +63,6 @@ CREATE TABLE Vehicle (
     FOREIGN KEY (Vehicle_Type_ID) REFERENCES Vehicle_Type(Vehicle_Type_ID)
 );
 
--- Tabelle zur Auflösung der m:n-Beziehung zwischen Vehicle und Contributing_Factor
 CREATE TABLE Vehicle_Factors (
     Vehicle_ID INT,
     Factor_ID INT,
@@ -83,5 +81,5 @@ CREATE TABLE Person (
     Person_Age INT,
     Person_Sex VARCHAR(10),
     FOREIGN KEY (Collision_ID) REFERENCES Crash(Collision_ID),
-    FOREIGN KEY (Vehicle_ID) REFERENCES Vehicle(Vehicle_ID)
+    FOREIGN KEY (Vehicle_ID) REFERENCES Vehicle(Vehicle_ID) 
 );
