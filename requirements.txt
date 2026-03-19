@@ -1,0 +1,6 @@
+pandas
+geopandas
+shapely
+pint
+numpy
+pyarrow
