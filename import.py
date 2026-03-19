@@ -144,15 +144,48 @@ crashes_final = pd.merge_asof(
 
 print("6. Erstelle restliche Dimensionstabellen...")
 # --- Vehicle Types ---
-fixed_types = [
-    'Passenger Vehicle', 'SUV', 'Station Wagon', 'Taxi', 'Livery', 
-    'Bus', 'School Bus', 'Truck', 'Commercial Vehicle', 'Delivery Truck', 
-    'Emergency Vehicle', 'Ambulance', 'Police', 'Motorcycle', 'Moped', 
-    'Scooter', 'Bicycle', 'E-Bike', 'Van', 'Minivan', 'Other', 'Unknown'
+vehicle_types_data = [
+    {'Type': 'Passenger', 'Category': 'Auto'},
+    {'Type': 'SUV', 'Category': 'Auto'},
+    {'Type': 'Wagon', 'Category': 'Auto'},
+    
+    {'Type': 'Taxi', 'Category': 'Hire'},
+    {'Type': 'Livery', 'Category': 'Hire'},
+    
+    {'Type': 'Bus', 'Category': 'Transit'},
+    {'Type': 'Schoolbus', 'Category': 'Transit'},
+    
+    {'Type': 'Truck', 'Category': 'Commercial'},
+    {'Type': 'Commercial', 'Category': 'Commercial'},
+    {'Type': 'Delivery', 'Category': 'Commercial'},
+    {'Type': 'Sanitation', 'Category': 'Commercial'},
+    
+    {'Type': 'Emergency', 'Category': 'Emergency'},
+    {'Type': 'Ambulance', 'Category': 'Emergency'},
+    {'Type': 'Police', 'Category': 'Emergency'},
+    {'Type': 'Firetruck', 'Category': 'Emergency'},
+    
+    {'Type': 'Motorcycle', 'Category': 'Motorbike'},
+    {'Type': 'Moped', 'Category': 'Motorbike'},
+    {'Type': 'ATV', 'Category': 'Motorbike'},
+    
+    {'Type': 'Bicycle', 'Category': 'Micromobility'},
+    {'Type': 'Ebike', 'Category': 'Micromobility'},
+    {'Type': 'Scooter', 'Category': 'Micromobility'},
+    {'Type': 'Escooter', 'Category': 'Micromobility'},
+    {'Type': 'Pedicab', 'Category': 'Micromobility'},
+    
+    {'Type': 'Van', 'Category': 'Van'},
+    {'Type': 'Minivan', 'Category': 'Van'},
+    
+    {'Type': 'Other', 'Category': 'Unknown'},
+    {'Type': 'Unknown', 'Category': 'Unknown'}
 ]
-vehicle_type_df = pd.DataFrame({'Vehicle_Type_Name': fixed_types})
+
+vehicle_type_df = pd.DataFrame(vehicle_types_data)
+vehicle_type_df.rename(columns={'Type': 'Vehicle_Type_Name', 'Category': 'Vehicle_Category'}, inplace=True)
 vehicle_type_df['Vehicle_Type_ID'] = pd.Series(range(1, len(vehicle_type_df) + 1), dtype='Int64')
-vehicle_type_df[['Vehicle_Type_ID', 'Vehicle_Type_Name']].to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle_Type.csv', index=False)
+vehicle_type_df[['Vehicle_Type_ID', 'Vehicle_Type_Name', 'Vehicle_Category']].to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle_Type.csv', index=False)
 
 # --- Contributing Factors (Bereinigt & Kategorisiert) ---
 factor_mapping = {
@@ -251,27 +284,32 @@ persons_filtered = persons_df[persons_df['collision_id'].isin(valid_collision_id
 # --- FAHRZEUGE (Vektorisiert & Granular) ---
 v_type = vehicles_filtered['vehicle_type'].str.upper().fillna('')
 
-# Bedingungen (Spezifisches muss immer vor Allgemeinem stehen!)
+# 1. Alle Conditions sauber definieren (Priorität von oben nach unten!)
 cond_school_bus = v_type.str.contains('SCH|SCL', regex=True)
 cond_bus = v_type.str.contains('BUS|MTA|OMNIBUS|COACH|ACCESS|SHUTTLE|TRANSI', regex=True)
 
-cond_delivery = v_type.str.contains('DELIV|DELV|COURIER|FEDEX|FED E|FEDERAL EX|UPS|MAIL|POST|USPS|U-HAUL|U HAUL|UHAUL|U-HAL', regex=True)
-cond_commercial = v_type.str.contains('COMMERCIAL|COM|FREIGHT|GARB|GARGAGE|SANITA|VENDOR|BOBCAT|BACKHOE|SWEEP|BROOM|LIFT|ICE CREAM|FORK|CRANE', regex=True)
-cond_truck = v_type.str.contains('TRUCK|TRK|TRU|TRACT|TRAC|TRAIL|BOX|DUMP|PICK|P/U|FLAT|TOW|CHASSIS', regex=True)
-
+cond_fire = v_type.str.contains('FIRE|FDNY|NYFD|LADDER', regex=True)
 cond_amb = v_type.str.contains('AMBULANCE|AMB|EMS|EMT', regex=True)
 cond_pol = v_type.str.contains('POLICE|NYPD|PATROL|RMP', regex=True)
-cond_emg = v_type.str.contains('EMERGENCY|AMU|RESCUE|FIRE|FDNY|NYFD|GOV|ARMY|LADDER', regex=True)
+cond_emg = v_type.str.contains('EMERGENCY|AMU|RESCUE|GOV|ARMY', regex=True)
+
+cond_garbage = v_type.str.contains('GARB|GARGAGE|SANITA|DSNY|TRASH|SWEEP|BROOM', regex=True)
+cond_delivery = v_type.str.contains('DELIV|DELV|COURIER|FEDEX|FED E|FEDERAL EX|UPS|MAIL|POST|USPS|U-HAUL|U HAUL|UHAUL|U-HAL', regex=True)
+cond_commercial = v_type.str.contains('COMMERCIAL|COM|FREIGHT|VENDOR|BOBCAT|BACKHOE|LIFT|ICE CREAM|FORK|CRANE', regex=True)
+cond_truck = v_type.str.contains('TRUCK|TRK|TRU|TRACT|TRAC|TRAIL|BOX|DUMP|PICK|P/U|FLAT|TOW|CHASSIS', regex=True)
 
 cond_taxi = v_type.str.contains('TAXI|CAB', regex=True)
 cond_livery = v_type.str.contains('LIMO|LIVERY|UBER|LYFT', regex=True)
 
+cond_pedicab = v_type.str.contains('PEDICAB|PEDI CAB|RICKSHAW', regex=True)
+cond_escooter = v_type.str.contains('E-SCO|E-SKA|HOVER|BOARD|SEGWAY|ONEWHEEL', regex=True)
 cond_ebike = v_type.str.contains('E-BIKE|ELECTRIC|ELETRIC|E-BI', regex=True)
 cond_bike = v_type.str.contains('BIKE|BICYCLE|CYCL', regex=True)
 
-cond_moped = v_type.str.contains('MOPED|MOP', regex=True)
-cond_scooter = v_type.str.contains('SCOOT|SCOT|SCO|E-SCO|VESPA', regex=True)
-cond_moto = v_type.str.contains('MOTOR|MOTO|DIRT', regex=True)
+cond_moped = v_type.str.contains('MOPED|MOP|REVEL', regex=True)
+cond_scooter = v_type.str.contains('SCOOT|SCOT|SCO|VESPA', regex=True)
+cond_atv = v_type.str.contains('ATV|DIRT', regex=True)
+cond_moto = v_type.str.contains('MOTOR|MOTO', regex=True)
 
 cond_minivan = v_type.str.contains('MINI', regex=True)
 cond_van = v_type.str.contains('VAN|VAHN|TRANSIT|SPRIN|ECONO', regex=True)
@@ -281,40 +319,41 @@ cond_suv = v_type.str.contains('SUV|SPORT|SUBUR|SUBN|JEEP', regex=True)
 
 cond_pass = v_type.str.contains('PASS|SEDAN|SEDN|4 DR|2 DR|COUPE|CONV|CAR|AUTO|4D|2D|4S|SDN', regex=True)
 
-# Unterscheidung zwischen 'Unknown' (leeres Feld) und 'Other' (Text vorhanden, aber passt in keine Kategorie)
 cond_unknown = (v_type == '') | (v_type == 'UNKNOWN')
 
-# Zuweisungen zusammenbauen (Reihenfolge muss exakt den conditions entsprechen!)
+# 2. Conditions in die Liste packen
 conditions = [
     cond_school_bus, cond_bus, 
-    cond_delivery, cond_commercial, cond_truck, 
-    cond_amb, cond_pol, cond_emg, 
+    cond_fire, cond_amb, cond_pol, cond_emg, 
+    cond_garbage, cond_delivery, cond_commercial, cond_truck, 
     cond_taxi, cond_livery, 
-    cond_ebike, cond_bike, 
-    cond_moped, cond_scooter, cond_moto, 
+    cond_pedicab, cond_escooter, cond_ebike, cond_bike, 
+    cond_moped, cond_scooter, cond_atv, cond_moto, 
     cond_minivan, cond_van, 
     cond_wagon, cond_suv, 
     cond_pass, 
     cond_unknown
 ]
 
+# 3. Zugehörige Ein-Wort-Choices
 choices = [
-    'School Bus', 'Bus', 
-    'Delivery Truck', 'Commercial Vehicle', 'Truck', 
-    'Ambulance', 'Police', 'Emergency Vehicle', 
+    'Schoolbus', 'Bus', 
+    'Firetruck', 'Ambulance', 'Police', 'Emergency', 
+    'Sanitation', 'Delivery', 'Commercial', 'Truck', 
     'Taxi', 'Livery', 
-    'E-Bike', 'Bicycle', 
-    'Moped', 'Scooter', 'Motorcycle', 
+    'Pedicab', 'Escooter', 'Ebike', 'Bicycle', 
+    'Moped', 'Scooter', 'ATV', 'Motorcycle', 
     'Minivan', 'Van', 
-    'Station Wagon', 'SUV', 
-    'Passenger Vehicle', 
+    'Wagon', 'SUV', 
+    'Passenger', 
     'Unknown'
 ]
 
-# Alles, was Text hat aber durch alle Raster fällt, wird 'Other' (default)
+# 4. Anwenden und Mergen
 vehicles_filtered['clean_type'] = np.select(conditions, choices, default='Other')
 vehicle_merge = pd.merge(vehicles_filtered, vehicle_type_df, left_on='clean_type', right_on='Vehicle_Type_Name', how='left')
 
+# 5. Finale Fahrzeugtabelle bauen
 vehicle_out = vehicle_merge[['unique_id', 'collision_id', 'state_registration', 'vehicle_year', 'Vehicle_Type_ID']].copy()
 vehicle_out.rename(columns={'unique_id': 'Vehicle_ID', 'collision_id': 'Collision_ID', 'state_registration': 'State_Registration', 'vehicle_year': 'Vehicle_Year'}, inplace=True)
 vehicle_out.dropna(subset=['Vehicle_ID'], inplace=True)
