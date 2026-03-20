@@ -1,4 +1,42 @@
 -- ==============================================================================
+-- DUMMY DATENSÄTZE FÜR ALLE DIMENSIONEN (Unknown Members)
+-- ==============================================================================
+
+-- 1. Borough Dummy
+INSERT INTO Borough (Borough_ID, Borough_Name) 
+VALUES (-1, 'Unknown Borough');
+
+-- 2. Precinct Dummy (hängt an Borough -1)
+INSERT INTO Precinct (Precinct_ID, Precinct_Name, Borough_ID) 
+VALUES (-1, 'Unknown Precinct', -1);
+
+-- 3. Location Dummy (hängt an Precinct -1)
+INSERT INTO Location (Location_ID, Longitude, Latitude, Zip_Code, Precinct_ID) 
+VALUES (-1, 0.0, 0.0, 'Unknown', -1);
+
+-- 4. Weather Dummy
+INSERT INTO Weather (Weather_ID, Weather_Station, Measure_Date, Measure_Time, Temp_Celsius, Visibility_Miles, Precipitation_Inches, Snow_Depth_Inches, Wind_Gust_Speed_MPH, Weather_Condition_Text)
+VALUES (-1, 'UNKNOWN', '1900-01-01', '00:00:00', 0.0, 0.0, 0.0, 0.0, 0.0, 'Wetterdaten fehlen');
+
+-- 5. Vehicle Type Dummy
+INSERT INTO Vehicle_Type (Vehicle_Type_ID, Vehicle_Type_Name, Vehicle_Category)
+VALUES (-1, 'Unknown Type', 'Unknown Category');
+
+-- 6. Contributing Factor Dummy
+INSERT INTO Contributing_Factor (Factor_ID, Factor_Name, Factor_Category)
+VALUES (-1, 'Unspecified Factor', 'Unknown Category');
+
+-- 7. Vehicle Dummy (hängt an Vehicle_Type -1)
+-- ID 0 = "Kein Fahrzeug" (für Fußgänger etc.)
+INSERT INTO Vehicle (Vehicle_ID, Collision_ID, State_Registration, Vehicle_Year, Vehicle_Type_ID)
+VALUES (0, NULL, 'Kein Fahrzeug', NULL, -1);
+
+-- 8. Person Dummy (hängt an Vehicle 0)
+INSERT INTO Person (Person_ID, Collision_ID, Vehicle_ID, Person_Type, Person_Role, Person_Injury, Person_Age, Person_Sex)
+VALUES (-1, NULL, 0, 'Unknown Person', 'Unknown Role', 'Unknown', NULL, 'U');
+GO
+
+-- ==============================================================================
 -- 1. UNABHÄNGIGE DIMENSIONEN
 -- ==============================================================================
 

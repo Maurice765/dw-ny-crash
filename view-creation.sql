@@ -4,9 +4,9 @@
 CREATE OR ALTER VIEW vw_Dim_Location AS
 SELECT 
     l.Location_ID,
-    b.Borough_Name,
-    p.Precinct_Name,
-    l.Zip_Code,
+    ISNULL(b.Borough_Name, 'Unknown Borough') AS Borough_Name,
+    ISNULL(p.Precinct_Name, 'Unknown Precinct') AS Precinct_Name,
+    ISNULL(l.Zip_Code, 'Unknown') AS Zip_Code,
     CAST(l.Longitude AS FLOAT) AS Longitude,
     CAST(l.Latitude AS FLOAT) AS Latitude
 FROM Location l
@@ -15,7 +15,7 @@ LEFT JOIN Borough b ON p.Borough_ID = b.Borough_ID;
 GO
 
 -- =============================================
--- 2. Dimension: Time & Weather
+-- 2. Dimension: Time & Weather (Kombiniert)
 -- =============================================
 CREATE OR ALTER VIEW vw_Dim_Time_Weather AS
 SELECT 
@@ -45,8 +45,8 @@ SELECT
     v.Vehicle_ID,
     v.State_Registration,
     CAST(v.Vehicle_Year AS INT) AS Vehicle_Year,
-    vt.Vehicle_Type_Name AS Vehicle_Type,
-    vt.Vehicle_Category AS Vehicle_Category -- Hier ergänzt!
+    ISNULL(vt.Vehicle_Type_Name, 'Unknown Type') AS Vehicle_Type,
+    ISNULL(vt.Vehicle_Category, 'Unknown Category') AS Vehicle_Category
 FROM Vehicle v
 LEFT JOIN Vehicle_Type vt ON v.Vehicle_Type_ID = vt.Vehicle_Type_ID;
 GO
@@ -81,8 +81,8 @@ GO
 -- =============================================
 CREATE OR ALTER VIEW vw_Bridge_Vehicle_Factor AS
 SELECT 
-    Vehicle_ID,
-    Factor_ID
+    ISNULL(Vehicle_ID, 0) AS Vehicle_ID,
+    ISNULL(Factor_ID, -1) AS Factor_ID
 FROM Vehicle_Factors;
 GO
 
@@ -92,10 +92,9 @@ GO
 CREATE OR ALTER VIEW vw_Bridge_Involvement AS
 SELECT 
     ROW_NUMBER() OVER (ORDER BY Collision_ID, Person_ID) AS Involvement_ID,
-    
-    Collision_ID AS Crash_ID,
-    Vehicle_ID,
-    Person_ID
+    ISNULL(Collision_ID, -1) AS Crash_ID,
+    ISNULL(Vehicle_ID, 0) AS Vehicle_ID,
+    ISNULL(Person_ID, -1) AS Person_ID
 FROM Person;
 GO
 
@@ -104,8 +103,8 @@ GO
 -- =============================================
 CREATE OR ALTER VIEW vw_Bridge_Crash_Factor AS
 SELECT DISTINCT 
-    bi.Crash_ID, 
-    vf.Factor_ID
+    ISNULL(bi.Crash_ID, -1) AS Crash_ID, 
+    ISNULL(vf.Factor_ID, -1) AS Factor_ID
 FROM vw_Bridge_Involvement bi
 JOIN vw_Bridge_Vehicle_Factor vf ON bi.Vehicle_ID = vf.Vehicle_ID
 WHERE bi.Crash_ID IS NOT NULL AND vf.Factor_ID IS NOT NULL;
@@ -154,8 +153,8 @@ SELECT
     CAST(ISNULL(SUM(CASE WHEN vt.Vehicle_Type_Name LIKE '%Truck%' AND p.Person_Injury = 'Injured' THEN 1 ELSE 0 END), 0) AS INT) AS Heavy_Vehicle_Injured,
     CAST(ISNULL(SUM(CASE WHEN vt.Vehicle_Type_Name LIKE '%Truck%' AND p.Person_Injury = 'Killed' THEN 1 ELSE 0 END), 0) AS INT) AS Heavy_Vehicle_Killed,
     
-    CAST(c.Location_ID AS INT) AS Location_ID,
-    CAST(c.Weather_ID AS INT) AS Time_Weather_ID,
+    CAST(ISNULL(c.Location_ID, -1) AS INT) AS Location_ID,
+    CAST(ISNULL(w.Weather_ID, -1) AS INT) AS Time_Weather_ID,
     CAST(ISNULL(cs.Computed_Severity_ID, 3) AS INT) AS Severity_ID
 
 FROM Crash c
@@ -163,9 +162,10 @@ LEFT JOIN Person p ON c.Collision_ID = p.Collision_ID
 LEFT JOIN Vehicle v ON p.Vehicle_ID = v.Vehicle_ID
 LEFT JOIN Vehicle_Type vt ON v.Vehicle_Type_ID = vt.Vehicle_Type_ID
 LEFT JOIN CrashSeverity cs ON c.Collision_ID = cs.Collision_ID
+LEFT JOIN Weather w ON c.Weather_ID = w.Weather_ID
 GROUP BY 
     c.Collision_ID,
     c.Location_ID,
-    c.Weather_ID,
+    w.Weather_ID,
     cs.Computed_Severity_ID;
 GO
