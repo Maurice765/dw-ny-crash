@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore')
 CRASHES_FILE = 'data/crashes.csv'
 VEHICLES_FILE = 'data/vehicles.csv'
 PERSONS_FILE = 'data/persons.csv'
-WEATHER_FILE = 'data/jfk_weather_cleaned.csv' 
+WEATHER_FILE = 'data/jfk_weather.csv' 
 PRECINCTS_FILE = 'data/precincts.geojson'  
 OUTPUT_DIR = Path('output_tables')
 PREFIX = 'st_' 
@@ -100,31 +100,44 @@ weather_raw_df = weather_raw_df.dropna(subset=['weather_datetime']).sort_values(
 
 weather_df = pd.DataFrame()
 weather_df['Weather_ID'] = pd.Series(range(1, len(weather_raw_df) + 1), dtype='Int64')
-weather_df['Weather_Station'] = 'KJFK' 
+
+# Station direkt aus den Daten (auf 10 Zeichen begrenzt für VARCHAR(10))
+weather_df['Weather_Station'] = weather_raw_df['STATION'].astype(str).str[:10] 
+
 weather_df['Measure_Date'] = weather_raw_df['weather_datetime'].dt.date
 weather_df['Measure_Time'] = weather_raw_df['weather_datetime'].dt.time
 
-temp_f_values = weather_raw_df['HOURLYDRYBULBTEMPF'].apply(clean_kaggle_numeric).values
-temp_f_quantities = temp_f_values * ureg.degF  
-weather_df['Temp_Celsius'] = np.round(temp_f_quantities.to(ureg.degC).magnitude, 2) 
+# Temperatur: Direkt die Celsius-Spalte nutzen!
+weather_df['Temp_Celsius'] = weather_raw_df['HOURLYDRYBULBTEMPC'].apply(clean_kaggle_numeric).round(2)
 
-weather_df['Precipitation_Inches'] = weather_raw_df['HOURLYPrecip'].apply(clean_kaggle_numeric).round(2)
+# Sicht und Niederschlag
 weather_df['Visibility_Miles'] = weather_raw_df['HOURLYVISIBILITY'].apply(clean_kaggle_numeric).round(2)
-weather_df['Wind_Gust_Speed_MPH'] = weather_raw_df['HOURLYWindSpeed'].apply(clean_kaggle_numeric).round(2)
-weather_df['Snow_Depth_Inches'] = 0.0
+weather_df['Precipitation_Inches'] = weather_raw_df['HOURLYPrecip'].apply(clean_kaggle_numeric).round(2)
 
-# Wetter-Bedingungen logisch ableiten
-cond_snow = (weather_df['Precipitation_Inches'] > 0) & (weather_df['Temp_Celsius'] <= 0)
-cond_rain = (weather_df['Precipitation_Inches'] > 0) & (weather_df['Temp_Celsius'] > 0)
-cond_fog = (weather_df['Visibility_Miles'] < 2.0)
-cond_clear = (weather_df['Precipitation_Inches'] == 0.0) & (weather_df['Visibility_Miles'] >= 5.0)
+# Windböen: Wir nutzen Gust (Böen). Wenn leer, Fallback auf normale Windgeschwindigkeit
+gust = weather_raw_df['HOURLYWindGustSpeed'].apply(clean_kaggle_numeric)
+speed = weather_raw_df['HOURLYWindSpeed'].apply(clean_kaggle_numeric)
+weather_df['Wind_Gust_Speed_MPH'] = np.where(gust > 0, gust, speed).round(2)
 
-weather_choices = ['Snow', 'Rain', 'Fog', 'Clear']
-weather_df['Weather_Condition_Text'] = np.select([cond_snow, cond_rain, cond_fog, cond_clear], weather_choices, default='Cloudy')
+# Schneehöhe: Ist ein täglicher Wert in den Rohdaten. Wir füllen ihn "vorwärts" (ffill)
+# für die Stunden des Tages auf, bevor wir bereinigen.
+snow_depth_raw = weather_raw_df['DAILYSnowDepth'].replace(r'^\s*$', np.nan, regex=True).ffill()
+weather_df['Snow_Depth_Inches'] = snow_depth_raw.apply(clean_kaggle_numeric).round(2)
+
+# Wetter-Bedingungen (Text): Direkt aus der Datei
+# Priorität: 1. PRESENTWEATHERTYPE, 2. SKYCONDITIONS, 3. 'Clear' (als Default)
+cond_text = weather_raw_df['HOURLYPRSENTWEATHERTYPE'].fillna('').astype(str).str.strip()
+sky_text = weather_raw_df['HOURLYSKYCONDITIONS'].fillna('').astype(str).str.strip()
+
+weather_df['Weather_Condition_Text'] = np.where(
+    cond_text != '', cond_text, 
+    np.where(sky_text != '', sky_text, 'Clear')
+)
+
+weather_df['Weather_Condition_Text'] = weather_df['Weather_Condition_Text'].str[:255]
 
 weather_df.to_csv(OUTPUT_DIR / f'{PREFIX}Weather.csv', index=False)
 weather_raw_df['Weather_ID'] = weather_df['Weather_ID'].values
-
 
 print("5. Verbinde Unfälle zeitlich mit dem JFK-Wetter...")
 crashes_mapped = crashes_mapped.sort_values('crash_datetime')
