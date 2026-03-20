@@ -9,7 +9,7 @@ import numpy as np
 
 warnings.filterwarnings('ignore')
 
-# --- Konfiguration ---
+# Konfiguration
 CRASHES_FILE = 'data/crashes.csv'
 VEHICLES_FILE = 'data/vehicles.csv'
 PERSONS_FILE = 'data/persons.csv'
@@ -23,7 +23,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 ureg = pint.UnitRegistry()
 
-# --- Hilfsfunktionen ---
+# Hilfsfunktionen
 def clean_kaggle_numeric(val):
     if pd.isna(val): return 0.0
     val_str = str(val).strip().upper()
@@ -32,7 +32,6 @@ def clean_kaggle_numeric(val):
     try: return float(cleaned) if cleaned else 0.0
     except: return 0.0
 
-# ==============================================================================
 
 print("1. Lese CSV-Daten ein...")
 crashes_df = pd.read_csv(CRASHES_FILE, engine='pyarrow')
@@ -100,32 +99,20 @@ weather_raw_df = weather_raw_df.dropna(subset=['weather_datetime']).sort_values(
 
 weather_df = pd.DataFrame()
 weather_df['Weather_ID'] = pd.Series(range(1, len(weather_raw_df) + 1), dtype='Int64')
-
-# Station direkt aus den Daten (auf 10 Zeichen begrenzt für VARCHAR(10))
 weather_df['Weather_Station'] = weather_raw_df['STATION'].astype(str).str[:10] 
-
 weather_df['Measure_Date'] = weather_raw_df['weather_datetime'].dt.date
 weather_df['Measure_Time'] = weather_raw_df['weather_datetime'].dt.time
-
-# Temperatur: Direkt die Celsius-Spalte nutzen!
 weather_df['Temp_Celsius'] = weather_raw_df['HOURLYDRYBULBTEMPC'].apply(clean_kaggle_numeric).round(2)
-
-# Sicht und Niederschlag
 weather_df['Visibility_Miles'] = weather_raw_df['HOURLYVISIBILITY'].apply(clean_kaggle_numeric).round(2)
 weather_df['Precipitation_Inches'] = weather_raw_df['HOURLYPrecip'].apply(clean_kaggle_numeric).round(2)
 
-# Windböen: Wir nutzen Gust (Böen). Wenn leer, Fallback auf normale Windgeschwindigkeit
 gust = weather_raw_df['HOURLYWindGustSpeed'].apply(clean_kaggle_numeric)
 speed = weather_raw_df['HOURLYWindSpeed'].apply(clean_kaggle_numeric)
 weather_df['Wind_Gust_Speed_MPH'] = np.where(gust > 0, gust, speed).round(2)
 
-# Schneehöhe: Ist ein täglicher Wert in den Rohdaten. Wir füllen ihn "vorwärts" (ffill)
-# für die Stunden des Tages auf, bevor wir bereinigen.
 snow_depth_raw = weather_raw_df['DAILYSnowDepth'].replace(r'^\s*$', np.nan, regex=True).ffill()
 weather_df['Snow_Depth_Inches'] = snow_depth_raw.apply(clean_kaggle_numeric).round(2)
 
-# Wetter-Bedingungen (Text): Direkt aus der Datei
-# Priorität: 1. PRESENTWEATHERTYPE, 2. SKYCONDITIONS, 3. 'Clear' (als Default)
 cond_text = weather_raw_df['HOURLYPRSENTWEATHERTYPE'].fillna('').astype(str).str.strip()
 sky_text = weather_raw_df['HOURLYSKYCONDITIONS'].fillna('').astype(str).str.strip()
 
@@ -156,7 +143,6 @@ crashes_final = pd.merge_asof(
 )
 
 print("6. Erstelle restliche Dimensionstabellen...")
-# --- Vehicle Types ---
 vehicle_types_data = [
     {'Type': 'Passenger', 'Category': 'Auto'},
     {'Type': 'SUV', 'Category': 'Auto'},
@@ -200,7 +186,6 @@ vehicle_type_df.rename(columns={'Type': 'Vehicle_Type_Name', 'Category': 'Vehicl
 vehicle_type_df['Vehicle_Type_ID'] = pd.Series(range(1, len(vehicle_type_df) + 1), dtype='Int64')
 vehicle_type_df[['Vehicle_Type_ID', 'Vehicle_Type_Name', 'Vehicle_Category']].to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle_Type.csv', index=False)
 
-# --- Contributing Factors (Bereinigt & Kategorisiert) ---
 factor_mapping = {
     'driver inattention/distraction': ['Driver Inattention/Distraction', 'Driver Distraction'],
     'passenger distraction': ['Passenger Distraction', 'Driver Distraction'],
@@ -274,7 +259,6 @@ factor_df = pd.DataFrame(mapped_data).drop_duplicates().reset_index(drop=True)
 factor_df['Factor_ID'] = pd.Series(range(1, len(factor_df) + 1), dtype='Int64')
 factor_df[['Factor_ID', 'Factor_Name', 'Factor_Category']].to_csv(OUTPUT_DIR / f'{PREFIX}Contributing_Factor.csv', index=False)
 
-# --- Locations ---
 locations = crashes_final[['latitude', 'longitude', 'zip_code', 'Precinct_ID']].drop_duplicates().reset_index(drop=True)
 locations['Location_ID'] = pd.Series(range(1, len(locations) + 1), dtype='Int64')
 locations[['Location_ID', 'longitude', 'latitude', 'zip_code', 'Precinct_ID']].to_csv(OUTPUT_DIR / f'{PREFIX}Location.csv', index=False)
@@ -294,10 +278,8 @@ valid_collision_ids = crash_out['Collision_ID'].unique()
 vehicles_filtered = vehicles_df[vehicles_df['collision_id'].isin(valid_collision_ids)].copy()
 persons_filtered = persons_df[persons_df['collision_id'].isin(valid_collision_ids)].copy()
 
-# --- FAHRZEUGE (Vektorisiert & Granular) ---
 v_type = vehicles_filtered['vehicle_type'].str.upper().fillna('')
 
-# 1. Alle Conditions sauber definieren (Priorität von oben nach unten!)
 cond_school_bus = v_type.str.contains('SCH|SCL', regex=True)
 cond_bus = v_type.str.contains('BUS|MTA|OMNIBUS|COACH|ACCESS|SHUTTLE|TRANSI', regex=True)
 
@@ -334,7 +316,6 @@ cond_pass = v_type.str.contains('PASS|SEDAN|SEDN|4 DR|2 DR|COUPE|CONV|CAR|AUTO|4
 
 cond_unknown = (v_type == '') | (v_type == 'UNKNOWN')
 
-# 2. Conditions in die Liste packen
 conditions = [
     cond_school_bus, cond_bus, 
     cond_fire, cond_amb, cond_pol, cond_emg, 
@@ -348,7 +329,6 @@ conditions = [
     cond_unknown
 ]
 
-# 3. Zugehörige Ein-Wort-Choices
 choices = [
     'Schoolbus', 'Bus', 
     'Firetruck', 'Ambulance', 'Police', 'Emergency', 
@@ -362,11 +342,9 @@ choices = [
     'Unknown'
 ]
 
-# 4. Anwenden und Mergen
 vehicles_filtered['clean_type'] = np.select(conditions, choices, default='Other')
 vehicle_merge = pd.merge(vehicles_filtered, vehicle_type_df, left_on='clean_type', right_on='Vehicle_Type_Name', how='left')
 
-# 5. Finale Fahrzeugtabelle bauen
 vehicle_out = vehicle_merge[['unique_id', 'collision_id', 'state_registration', 'vehicle_year', 'Vehicle_Type_ID']].copy()
 vehicle_out.rename(columns={'unique_id': 'Vehicle_ID', 'collision_id': 'Collision_ID', 'state_registration': 'State_Registration', 'vehicle_year': 'Vehicle_Year'}, inplace=True)
 vehicle_out.dropna(subset=['Vehicle_ID'], inplace=True)
@@ -375,16 +353,13 @@ vehicle_out['Collision_ID'] = vehicle_out['Collision_ID'].astype('Int64')
 vehicle_out[['Vehicle_ID', 'Collision_ID', 'State_Registration', 'Vehicle_Year', 'Vehicle_Type_ID']].to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle.csv', index=False)
 
 
-# --- FAHRZEUG-FAKTOREN (Vektorisiert & Bereinigt) ---
 factors_melted = vehicles_filtered[['unique_id', 'contributing_factor_1', 'contributing_factor_2']].melt(
     id_vars=['unique_id'], value_vars=['contributing_factor_1', 'contributing_factor_2'], value_name='Raw_Factor'
 ).dropna(subset=['Raw_Factor'])
 
-# Mappe die Rohdaten auf unsere sauberen Namen
 factors_melted['clean_key'] = factors_melted['Raw_Factor'].str.strip().str.lower()
 factors_melted['Factor_Name'] = factors_melted['clean_key'].map(lambda x: factor_mapping[x][0] if x in factor_mapping else None)
 
-# Alle unlogischen oder undefinierten fallen hier als NaN raus
 factors_melted = factors_melted.dropna(subset=['Factor_Name'])
 
 factors_mapped = pd.merge(factors_melted, factor_df, on='Factor_Name', how='inner')
@@ -395,8 +370,6 @@ vehicle_factors_out['Vehicle_ID'] = vehicle_factors_out['Vehicle_ID'].astype('In
 vehicle_factors_out['Factor_ID'] = vehicle_factors_out['Factor_ID'].astype('Int64')
 vehicle_factors_out.to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle_Factors.csv', index=False)
 
-
-# --- PERSONEN ---
 person_out = persons_filtered[['unique_id', 'collision_id', 'vehicle_id', 'person_type', 'ped_role', 'person_injury', 'person_age', 'person_sex']].copy()
 person_out.rename(columns={
     'unique_id': 'Person_ID', 'collision_id': 'Collision_ID', 'vehicle_id': 'Vehicle_ID', 

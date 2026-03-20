@@ -1,16 +1,12 @@
--- ==============================================================================
--- DUMMY DATENSÄTZE FÜR ALLE DIMENSIONEN (Unknown Members)
--- ==============================================================================
-
 -- 1. Borough Dummy
 INSERT INTO Borough (Borough_ID, Borough_Name) 
 VALUES (-1, 'Unknown Borough');
 
--- 2. Precinct Dummy (hängt an Borough -1)
+-- 2. Precinct Dummy
 INSERT INTO Precinct (Precinct_ID, Precinct_Name, Borough_ID) 
 VALUES (-1, 'Unknown Precinct', -1);
 
--- 3. Location Dummy (hängt an Precinct -1)
+-- 3. Location Dummy
 INSERT INTO Location (Location_ID, Longitude, Latitude, Zip_Code, Precinct_ID) 
 VALUES (-1, 0.0, 0.0, 'Unknown', -1);
 
@@ -26,23 +22,23 @@ VALUES (-1, 'Unknown Type', 'Unknown Category');
 INSERT INTO Contributing_Factor (Factor_ID, Factor_Name, Factor_Category)
 VALUES (-1, 'Unspecified Factor', 'Unknown Category');
 
--- 7. Vehicle Dummy (hängt an Vehicle_Type -1)
--- ID 0 = "Kein Fahrzeug" (für Fußgänger etc.)
+-- 7. Vehicle Dummy
 INSERT INTO Vehicle (Vehicle_ID, Collision_ID, State_Registration, Vehicle_Year, Vehicle_Type_ID)
 VALUES (0, NULL, 'Kein Fahrzeug', NULL, -1);
 
--- 8. Person Dummy (hängt an Vehicle 0)
+-- 8. Person Dummy
 INSERT INTO Person (Person_ID, Collision_ID, Vehicle_ID, Person_Type, Person_Role, Person_Injury, Person_Age, Person_Sex)
 VALUES (-1, NULL, 0, 'Unknown Person', 'Unknown Role', 'Unknown', NULL, 'U');
 GO
 
--- ==============================================================================
--- 1. UNABHÄNGIGE DIMENSIONEN
--- ==============================================================================
+-- 9. Crash Dummy
+INSERT INTO Crash (Collision_ID, Crash_Date, Crash_Time, Location_ID, Weather_ID)
+VALUES (-1, '1900-01-01', '00:00:00', -1, -1);
+GO
 
+-- 1. Unabhängige Dimensionen
 INSERT INTO Borough (Borough_ID, Borough_Name)
 SELECT 
-    -- Überall die sichere INT-Konvertierung
     TRY_CONVERT(INT, TRY_CONVERT(FLOAT, CAST(Borough_ID AS VARCHAR(255)))), 
     CAST(Borough_Name AS VARCHAR(100))
 FROM st_Borough;
@@ -76,10 +72,7 @@ SELECT
 FROM st_Contributing_Factor;
 
 
--- ==============================================================================
--- 2. ABHÄNGIGE DIMENSIONEN
--- ==============================================================================
-
+-- 2. Abhängige Dimensionen
 INSERT INTO Precinct (Precinct_ID, Precinct_Name, Borough_ID)
 SELECT 
     TRY_CONVERT(INT, TRY_CONVERT(FLOAT, CAST(Precinct_ID AS VARCHAR(255)))), 
@@ -97,10 +90,7 @@ SELECT
 FROM st_Location;
 
 
--- ==============================================================================
--- 3. FAKTENTABELLEN
--- ==============================================================================
-
+-- 3. Faktentabelle
 INSERT INTO Crash (Collision_ID, Crash_Date, Crash_Time, Location_ID, Weather_ID)
 SELECT 
     TRY_CONVERT(INT, TRY_CONVERT(FLOAT, CAST(Collision_ID AS VARCHAR(255)))), 

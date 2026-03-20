@@ -1,6 +1,4 @@
--- =============================================
 -- 1. Dimension: Location
--- =============================================
 CREATE OR ALTER VIEW vw_Dim_Location AS
 SELECT 
     l.Location_ID,
@@ -14,9 +12,7 @@ LEFT JOIN Precinct p ON l.Precinct_ID = p.Precinct_ID
 LEFT JOIN Borough b ON p.Borough_ID = b.Borough_ID;
 GO
 
--- =============================================
 -- 2. Dimension: Time & Weather (Kombiniert)
--- =============================================
 CREATE OR ALTER VIEW vw_Dim_Time_Weather AS
 SELECT 
     w.Weather_ID AS Time_Weather_ID,
@@ -37,9 +33,7 @@ SELECT
 FROM Weather w;
 GO
 
--- =============================================
 -- 3. Dimension: Vehicle
--- =============================================
 CREATE OR ALTER VIEW vw_Dim_Vehicle AS
 SELECT 
     v.Vehicle_ID,
@@ -51,9 +45,7 @@ FROM Vehicle v
 LEFT JOIN Vehicle_Type vt ON v.Vehicle_Type_ID = vt.Vehicle_Type_ID;
 GO
 
--- =============================================
 -- 4. Dimension: Person
--- =============================================
 CREATE OR ALTER VIEW vw_Dim_Person AS
 SELECT 
     Person_ID,
@@ -65,9 +57,7 @@ SELECT
 FROM Person;
 GO
 
--- =============================================
 -- 5. Dimension: Contributing Factor
--- =============================================
 CREATE OR ALTER VIEW vw_Dim_Contributing_Factor AS
 SELECT 
     Factor_ID,
@@ -76,9 +66,7 @@ SELECT
 FROM Contributing_Factor;
 GO
 
--- =============================================
--- 6. Bridge: Vehicle Factor (Angehängt an Vehicle)
--- =============================================
+-- 6. Bridge: Vehicle Factor
 CREATE OR ALTER VIEW vw_Bridge_Vehicle_Factor AS
 SELECT 
     ISNULL(Vehicle_ID, 0) AS Vehicle_ID,
@@ -86,9 +74,7 @@ SELECT
 FROM Vehicle_Factors;
 GO
 
--- =============================================
 -- 7. Bridge: Involvement (Verknüpft Crash, Vehicle, Person)
--- =============================================
 CREATE OR ALTER VIEW vw_Bridge_Involvement AS
 SELECT 
     ROW_NUMBER() OVER (ORDER BY Collision_ID, Person_ID) AS Involvement_ID,
@@ -98,9 +84,7 @@ SELECT
 FROM Person;
 GO
 
--- =============================================
 -- 8. Bridge: Crash Factor (Verknüpft Crash und Factor über Vehicle)
--- =============================================
 CREATE OR ALTER VIEW vw_Bridge_Crash_Factor AS
 SELECT DISTINCT 
     ISNULL(bi.Crash_ID, -1) AS Crash_ID, 
@@ -110,9 +94,7 @@ JOIN vw_Bridge_Vehicle_Factor vf ON bi.Vehicle_ID = vf.Vehicle_ID
 WHERE bi.Crash_ID IS NOT NULL AND vf.Factor_ID IS NOT NULL;
 GO
 
--- =============================================
--- 9. Dimension: Severity (Statisch generiert)
--- =============================================
+-- 9. Dimension: Severity
 CREATE OR ALTER VIEW vw_Dim_Severity AS
 SELECT CAST(1 AS INT) AS Severity_ID, 'Fatal' AS Damage_Category, 'High' AS Severity_Class
 UNION ALL
@@ -121,9 +103,7 @@ UNION ALL
 SELECT CAST(3 AS INT) AS Severity_ID, 'Property Damage Only' AS Damage_Category, 'Low' AS Severity_Class;
 GO
 
--- =============================================
 -- 10. Fact: Crashes (Aggregiert die Metriken)
--- =============================================
 CREATE OR ALTER VIEW vw_Fact_Crashes AS
 WITH CrashSeverity AS (
     SELECT 
