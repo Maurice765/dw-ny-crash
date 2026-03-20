@@ -90,6 +90,8 @@ GO
 -- =============================================
 CREATE OR ALTER VIEW vw_Bridge_Involvement AS
 SELECT 
+    ROW_NUMBER() OVER (ORDER BY Collision_ID, Person_ID) AS Involvement_ID,
+    
     Collision_ID AS Crash_ID,
     Vehicle_ID,
     Person_ID
