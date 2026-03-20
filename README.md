@@ -7,6 +7,11 @@ Dieses Repository enthält die ETL-Pipeline und die SQL-Skripte zum Aufbau eines
 * [output_tables/](output_tables/): Zielordner, in dem das Python-Skript die bereinigten und transformierten CSV-Dateien für den Datenbank-Import ablegt.
 * [etl-transform.py](etl-transform.py): Das zentrale ETL-Skript. Liest Rohdaten, bereinigt sie, führt räumliche Zuweisungen durch (Spatial Join) und exportiert die bereiten Staging-Tabellen.
 
+## 📊 Datenquellen
+Die Rohdaten für dieses Projekt stammen aus folgenden öffentlichen Quellen:
+* **NYPD Motor Vehicle Collisions:** [NYC Open Data](https://opendata.cityofnewyork.us/)
+* **Wetterdaten (KJFK Airport):** [Kaggle - NOAA Weather Data JFK Airport](https://www.kaggle.com/datasets/zhaodianwen/noaaweatherdatajfkairport)
+
 ### 🗄️ SQL Skripte
 
 1. [create-basis-tables.sql](create-basis-tables.sql): Erstellt das physische Tabellenschema in der SQL-Datenbank
