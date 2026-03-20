@@ -45,7 +45,8 @@ SELECT
     v.Vehicle_ID,
     v.State_Registration,
     CAST(v.Vehicle_Year AS INT) AS Vehicle_Year,
-    vt.Vehicle_Type_Name AS Vehicle_Type
+    vt.Vehicle_Type_Name AS Vehicle_Type,
+    vt.Vehicle_Category AS Vehicle_Category -- Hier ergänzt!
 FROM Vehicle v
 LEFT JOIN Vehicle_Type vt ON v.Vehicle_Type_ID = vt.Vehicle_Type_ID;
 GO
