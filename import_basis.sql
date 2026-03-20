@@ -23,10 +23,11 @@ SELECT
     CAST(Weather_Condition_Text AS VARCHAR(255))
 FROM st_Weather;
 
-INSERT INTO Vehicle_Type (Vehicle_Type_ID, Vehicle_Type_Name)
+INSERT INTO Vehicle_Type (Vehicle_Type_ID, Vehicle_Type_Name, Vehicle_Category)
 SELECT 
     TRY_CONVERT(INT, TRY_CONVERT(FLOAT, CAST(Vehicle_Type_ID AS VARCHAR(255)))), 
-    CAST(Vehicle_Type_Name AS VARCHAR(100))
+    CAST(Vehicle_Type_Name AS VARCHAR(100)),
+    CAST(Vehicle_Category AS VARCHAR(100))
 FROM st_Vehicle_Type;
 
 INSERT INTO Contributing_Factor (Factor_ID, Factor_Name, Factor_Category)

@@ -19,6 +19,7 @@ CREATE TABLE Weather (
 CREATE TABLE Vehicle_Type (
     Vehicle_Type_ID INT PRIMARY KEY,
     Vehicle_Type_Name VARCHAR(100),
+    Vehicle_Category VARCHAR(100)
 );
 
 CREATE TABLE Contributing_Factor (

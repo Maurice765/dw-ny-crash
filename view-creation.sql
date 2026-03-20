@@ -15,7 +15,7 @@ LEFT JOIN Borough b ON p.Borough_ID = b.Borough_ID;
 GO
 
 -- =============================================
--- 2. Dimension: Time & Weather (Kombiniert)
+-- 2. Dimension: Time & Weather
 -- =============================================
 CREATE OR ALTER VIEW vw_Dim_Time_Weather AS
 SELECT 
@@ -99,7 +99,7 @@ FROM Person;
 GO
 
 -- =============================================
--- 8. Bridge: Crash Factor (Neu - Verknüpft Crash und Factor über Vehicle)
+-- 8. Bridge: Crash Factor (Verknüpft Crash und Factor über Vehicle)
 -- =============================================
 CREATE OR ALTER VIEW vw_Bridge_Crash_Factor AS
 SELECT DISTINCT 
