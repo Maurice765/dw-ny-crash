@@ -29,7 +29,24 @@ SELECT
     CAST(w.Snow_Depth_Inches AS FLOAT) AS Snow_Depth_Inches,
     CAST(w.Wind_Gust_Speed_MPH AS FLOAT) AS Wind_Gust_Speed_MPH,
     
-    w.Weather_Condition_Text
+    w.Weather_Condition_Text,
+    
+    -- Niederschlag
+    CASE 
+        WHEN CAST(w.Precipitation_Inches AS FLOAT) > 0 THEN 1
+        WHEN CAST(w.Precipitation_Inches AS FLOAT) = 0 THEN 0
+        ELSE -1
+    END AS Is_Precipitation,
+
+    -- Wind-Stufen
+    CASE 
+        WHEN CAST(w.Wind_Gust_Speed_MPH AS FLOAT) = 0 THEN 'Calm'
+        WHEN CAST(w.Wind_Gust_Speed_MPH AS FLOAT) > 0 AND CAST(w.Wind_Gust_Speed_MPH AS FLOAT) <= 12 THEN 'Light Breeze'
+        WHEN CAST(w.Wind_Gust_Speed_MPH AS FLOAT) > 12 AND CAST(w.Wind_Gust_Speed_MPH AS FLOAT) <= 24 THEN 'Moderate Wind'
+        WHEN CAST(w.Wind_Gust_Speed_MPH AS FLOAT) > 24 AND CAST(w.Wind_Gust_Speed_MPH AS FLOAT) <= 38 THEN 'Strong Wind'
+        WHEN CAST(w.Wind_Gust_Speed_MPH AS FLOAT) > 38 THEN 'Storm'
+        ELSE 'Unknown'
+    END AS Wind_Level
 FROM Weather w;
 GO
 
