@@ -9,7 +9,7 @@ import numpy as np
 
 warnings.filterwarnings('ignore')
 
-# Konfiguration
+# --- Konfiguration ---
 CRASHES_FILE = 'data/crashes.csv'
 VEHICLES_FILE = 'data/vehicles.csv'
 PERSONS_FILE = 'data/persons.csv'
@@ -17,13 +17,15 @@ WEATHER_FILE = 'data/jfk_weather.csv'
 PRECINCTS_FILE = 'data/precincts.geojson'  
 OUTPUT_DIR = Path('output_tables')
 PREFIX = 'st_' 
-FILTER_YEAR = 2017
+FILTER_YEAR = 2018
+
+ID_OFFSET = FILTER_YEAR * 10000000 
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 ureg = pint.UnitRegistry()
 
-# Hilfsfunktionen
+# --- Hilfsfunktionen ---
 def clean_kaggle_numeric(val):
     if pd.isna(val): return 0.0
     val_str = str(val).strip().upper()
@@ -32,6 +34,7 @@ def clean_kaggle_numeric(val):
     try: return float(cleaned) if cleaned else 0.0
     except: return 0.0
 
+# ==============================================================================
 
 print("1. Lese CSV-Daten ein...")
 crashes_df = pd.read_csv(CRASHES_FILE, engine='pyarrow')
@@ -44,6 +47,7 @@ vehicles_df.columns = vehicles_df.columns.str.lower().str.replace(' ', '_')
 persons_df.columns = persons_df.columns.str.lower().str.replace(' ', '_')
 
 print("2. Erstelle Borough und Precinct Dimensionstabellen...")
+
 boroughs_list = ['MANHATTAN', 'BRONX', 'BROOKLYN', 'QUEENS', 'STATEN ISLAND']
 borough_df = pd.DataFrame({'Borough_Name': boroughs_list})
 borough_df['Borough_ID'] = pd.Series(range(1, len(borough_df) + 1), dtype='Int64')
@@ -71,7 +75,7 @@ precinct_out = precinct_out[precinct_out['Precinct_ID'] > 0]
 precinct_out.to_csv(OUTPUT_DIR / f'{PREFIX}Precinct.csv', index=False)
 
 
-print("3. Filtere Unfälle & berechne räumliche Nähe zu Precincts...")
+print(f"3. Filtere Unfälle für das Jahr {FILTER_YEAR} & berechne räumliche Nähe...")
 crashes_df = crashes_df.dropna(subset=['latitude', 'longitude'])
 crashes_df['clean_date'] = crashes_df['crash_date'].astype(str).str[:10]
 crashes_df['crash_datetime'] = pd.to_datetime(crashes_df['clean_date'] + ' ' + crashes_df['crash_time'].astype(str), errors='coerce')
@@ -92,13 +96,16 @@ crashes_mapped['Borough_ID'] = crashes_mapped['Borough_ID'].astype('Int64')
 crashes_mapped['Precinct_ID'] = crashes_mapped['Precinct_ID'].astype('Int64')
 if 'index_right' in crashes_mapped.columns: crashes_mapped = crashes_mapped.drop(columns=['index_right'])
 
-
-print("4. Verarbeite die JFK Kaggle Wetterdaten...")
+print(f"4. Verarbeite die JFK Wetterdaten nur für {FILTER_YEAR}...")
 weather_raw_df['weather_datetime'] = pd.to_datetime(weather_raw_df['DATE'], errors='coerce')
-weather_raw_df = weather_raw_df.dropna(subset=['weather_datetime']).sort_values('weather_datetime')
+weather_raw_df = weather_raw_df.dropna(subset=['weather_datetime'])
+
+# Wetter auf das Jahr filtern UND DEN INDEX ZURÜCKSETZEN (Das ist der Fix!)
+weather_raw_df = weather_raw_df[weather_raw_df['weather_datetime'].dt.year == FILTER_YEAR].sort_values('weather_datetime')
+weather_raw_df = weather_raw_df.reset_index(drop=True)
 
 weather_df = pd.DataFrame()
-weather_df['Weather_ID'] = pd.Series(range(1, len(weather_raw_df) + 1), dtype='Int64')
+weather_df['Weather_ID'] = pd.Series(range(1, len(weather_raw_df) + 1), dtype='Int64') + ID_OFFSET
 weather_df['Weather_Station'] = weather_raw_df['STATION'].astype(str).str[:10] 
 weather_df['Measure_Date'] = weather_raw_df['weather_datetime'].dt.date
 weather_df['Measure_Time'] = weather_raw_df['weather_datetime'].dt.time
@@ -120,10 +127,10 @@ weather_df['Weather_Condition_Text'] = np.where(
     cond_text != '', cond_text, 
     np.where(sky_text != '', sky_text, 'Clear')
 )
-
 weather_df['Weather_Condition_Text'] = weather_df['Weather_Condition_Text'].str[:255]
 
-weather_df.to_csv(OUTPUT_DIR / f'{PREFIX}Weather.csv', index=False)
+# Ausgabe mit Jahr im Dateinamen
+weather_df.to_csv(OUTPUT_DIR / f'{PREFIX}Weather_{FILTER_YEAR}.csv', index=False)
 weather_raw_df['Weather_ID'] = weather_df['Weather_ID'].values
 
 print("5. Verbinde Unfälle zeitlich mit dem JFK-Wetter...")
@@ -142,113 +149,20 @@ crashes_final = pd.merge_asof(
     tolerance=pd.Timedelta('2 hours')
 )
 
-print("6. Erstelle restliche Dimensionstabellen...")
-vehicle_types_data = [
-    {'Type': 'Passenger', 'Category': 'Auto'},
-    {'Type': 'SUV', 'Category': 'Auto'},
-    {'Type': 'Wagon', 'Category': 'Auto'},
-    
-    {'Type': 'Taxi', 'Category': 'Hire'},
-    {'Type': 'Livery', 'Category': 'Hire'},
-    
-    {'Type': 'Bus', 'Category': 'Transit'},
-    {'Type': 'Schoolbus', 'Category': 'Transit'},
-    
-    {'Type': 'Truck', 'Category': 'Commercial'},
-    {'Type': 'Commercial', 'Category': 'Commercial'},
-    {'Type': 'Delivery', 'Category': 'Commercial'},
-    {'Type': 'Sanitation', 'Category': 'Commercial'},
-    
-    {'Type': 'Emergency', 'Category': 'Emergency'},
-    {'Type': 'Ambulance', 'Category': 'Emergency'},
-    {'Type': 'Police', 'Category': 'Emergency'},
-    {'Type': 'Firetruck', 'Category': 'Emergency'},
-    
-    {'Type': 'Motorcycle', 'Category': 'Motorbike'},
-    {'Type': 'Moped', 'Category': 'Motorbike'},
-    {'Type': 'ATV', 'Category': 'Motorbike'},
-    
-    {'Type': 'Bicycle', 'Category': 'Micromobility'},
-    {'Type': 'Ebike', 'Category': 'Micromobility'},
-    {'Type': 'Scooter', 'Category': 'Micromobility'},
-    {'Type': 'Escooter', 'Category': 'Micromobility'},
-    {'Type': 'Pedicab', 'Category': 'Micromobility'},
-    
-    {'Type': 'Van', 'Category': 'Van'},
-    {'Type': 'Minivan', 'Category': 'Van'},
-    
-    {'Type': 'Other', 'Category': 'Unknown'},
-    {'Type': 'Unknown', 'Category': 'Unknown'}
-]
 
+print("6. Erstelle restliche Dimensionstabellen...")
+
+# Statische Dimension: Kein Jahr im Dateinamen
+vehicle_types_data = [{'Type': 'Passenger', 'Category': 'Auto'}, {'Type': 'SUV', 'Category': 'Auto'}, {'Type': 'Wagon', 'Category': 'Auto'}, {'Type': 'Taxi', 'Category': 'Hire'}, {'Type': 'Livery', 'Category': 'Hire'}, {'Type': 'Bus', 'Category': 'Transit'}, {'Type': 'Schoolbus', 'Category': 'Transit'}, {'Type': 'Truck', 'Category': 'Commercial'}, {'Type': 'Commercial', 'Category': 'Commercial'}, {'Type': 'Delivery', 'Category': 'Commercial'}, {'Type': 'Sanitation', 'Category': 'Commercial'}, {'Type': 'Emergency', 'Category': 'Emergency'}, {'Type': 'Ambulance', 'Category': 'Emergency'}, {'Type': 'Police', 'Category': 'Emergency'}, {'Type': 'Firetruck', 'Category': 'Emergency'}, {'Type': 'Motorcycle', 'Category': 'Motorbike'}, {'Type': 'Moped', 'Category': 'Motorbike'}, {'Type': 'ATV', 'Category': 'Motorbike'}, {'Type': 'Bicycle', 'Category': 'Micromobility'}, {'Type': 'Ebike', 'Category': 'Micromobility'}, {'Type': 'Scooter', 'Category': 'Micromobility'}, {'Type': 'Escooter', 'Category': 'Micromobility'}, {'Type': 'Pedicab', 'Category': 'Micromobility'}, {'Type': 'Van', 'Category': 'Van'}, {'Type': 'Minivan', 'Category': 'Van'}, {'Type': 'Other', 'Category': 'Unknown'}, {'Type': 'Unknown', 'Category': 'Unknown'}]
 vehicle_type_df = pd.DataFrame(vehicle_types_data)
 vehicle_type_df.rename(columns={'Type': 'Vehicle_Type_Name', 'Category': 'Vehicle_Category'}, inplace=True)
 vehicle_type_df['Vehicle_Type_ID'] = pd.Series(range(1, len(vehicle_type_df) + 1), dtype='Int64')
 vehicle_type_df[['Vehicle_Type_ID', 'Vehicle_Type_Name', 'Vehicle_Category']].to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle_Type.csv', index=False)
 
-factor_mapping = {
-    'driver inattention/distraction': ['Driver Inattention/Distraction', 'Driver Distraction'],
-    'passenger distraction': ['Passenger Distraction', 'Driver Distraction'],
-    'outside car distraction': ['Outside Car Distraction', 'Driver Distraction'],
-    'other electronic device': ['Other Electronic Device', 'Driver Distraction'],
-    'cell phone (hand-held)': ['Cell Phone (hand-held)', 'Driver Distraction'],
-    'cell phone (hands-free)': ['Cell Phone (hands-free)', 'Driver Distraction'],
-    'using on board navigation device': ['Using On Board Navigation Device', 'Driver Distraction'],
-    'eating or drinking': ['Eating or Drinking', 'Driver Distraction'],
-    'texting': ['Texting', 'Driver Distraction'],
-    'listening/using headphones': ['Listening/Using Headphones', 'Driver Distraction'],
-    'lost consciousness': ['Lost Consciousness', 'Driver Condition'],
-    'physical disability': ['Physical Disability', 'Driver Condition'],
-    'fatigued/drowsy': ['Fatigued/Drowsy', 'Driver Condition'],
-    'prescription medication': ['Prescription Medication', 'Driver Condition'],
-    'illness': ['Illness', 'Driver Condition'],
-    'illnes': ['Illness', 'Driver Condition'], 
-    'alcohol involvement': ['Alcohol Involvement', 'Driver Condition'],
-    'fell asleep': ['Fell Asleep', 'Driver Condition'],
-    'drugs (illegal)': ['Drugs (Illegal)', 'Driver Condition'], 
-    'traffic control disregarded': ['Traffic Control Disregarded', 'Traffic Violation'],
-    'unsafe lane changing': ['Unsafe Lane Changing', 'Traffic Violation'],
-    'backing unsafely': ['Backing Unsafely', 'Traffic Violation'],
-    'failure to yield right-of-way': ['Failure to Yield Right-of-Way', 'Traffic Violation'],
-    'following too closely': ['Following Too Closely', 'Traffic Violation'],
-    'turning improperly': ['Turning Improperly', 'Traffic Violation'],
-    'passing too closely': ['Passing Too Closely', 'Traffic Violation'],
-    'passing or lane usage improper': ['Passing or Lane Usage Improper', 'Traffic Violation'],
-    'unsafe speed': ['Unsafe Speed', 'Traffic Violation'],
-    'aggressive driving/road rage': ['Aggressive Driving/Road Rage', 'Traffic Violation'],
-    'failure to keep right': ['Failure to Keep Right', 'Traffic Violation'],
-    'driver inexperience': ['Driver Inexperience', 'Traffic Violation'],
-    'other vehicular': ['Other Vehicular Defect', 'Vehicle Defect'],
-    'brakes defective': ['Brakes Defective', 'Vehicle Defect'],
-    'oversized vehicle': ['Oversized Vehicle', 'Vehicle Defect'],
-    'steering failure': ['Steering Failure', 'Vehicle Defect'],
-    'tire failure/inadequate': ['Tire Failure/Inadequate', 'Vehicle Defect'],
-    'accelerator defective': ['Accelerator Defective', 'Vehicle Defect'],
-    'driverless/runaway vehicle': ['Driverless/Runaway Vehicle', 'Vehicle Defect'],
-    'other lighting defects': ['Other Lighting Defects', 'Vehicle Defect'],
-    'headlights defective': ['Headlights Defective', 'Vehicle Defect'],
-    'tow hitch defective': ['Tow Hitch Defective', 'Vehicle Defect'],
-    'windshield inadequate': ['Windshield Inadequate', 'Vehicle Defect'],
-    'tinted windows': ['Tinted Windows', 'Vehicle Defect'],
-    'pavement slippery': ['Pavement Slippery', 'Environmental'],
-    'glare': ['Glare', 'Environmental'],
-    'pavement defective': ['Pavement Defective', 'Environmental'],
-    'obstruction/debris': ['Obstruction/Debris', 'Environmental'],
-    'lane marking improper/inadequate': ['Lane Marking Improper/Inadequate', 'Environmental'],
-    'traffic control device improper/non-working': ['Traffic Control Device Improper/Non-Working', 'Environmental'],
-    'shoulders defective/improper': ['Shoulders Defective/Improper', 'Environmental'],
-    'animals action': ['Animals Action', 'Environmental'],
-    'reaction to uninvolved vehicle': ['Reaction to Uninvolved Vehicle', 'Other'],
-    'view obstructed/limited': ['View Obstructed/Limited', 'Other'],
-    'reaction to other uninvolved vehicle': ['Reaction to Other Uninvolved Vehicle', 'Other'],
-    'pedestrian/bicyclist/other pedestrian error/confusion': ['Pedestrian/Bicyclist Error', 'Other'],
-    'vehicle vandalism': ['Vehicle Vandalism', 'Other'],
-    'unspecified': ['Unspecified', 'Unknown']
-}
+factor_mapping = {'driver inattention/distraction': ['Driver Inattention/Distraction', 'Driver Distraction'], 'passenger distraction': ['Passenger Distraction', 'Driver Distraction'], 'outside car distraction': ['Outside Car Distraction', 'Driver Distraction'], 'other electronic device': ['Other Electronic Device', 'Driver Distraction'], 'cell phone (hand-held)': ['Cell Phone (hand-held)', 'Driver Distraction'], 'cell phone (hands-free)': ['Cell Phone (hands-free)', 'Driver Distraction'], 'using on board navigation device': ['Using On Board Navigation Device', 'Driver Distraction'], 'eating or drinking': ['Eating or Drinking', 'Driver Distraction'], 'texting': ['Texting', 'Driver Distraction'], 'listening/using headphones': ['Listening/Using Headphones', 'Driver Distraction'], 'lost consciousness': ['Lost Consciousness', 'Driver Condition'], 'physical disability': ['Physical Disability', 'Driver Condition'], 'fatigued/drowsy': ['Fatigued/Drowsy', 'Driver Condition'], 'prescription medication': ['Prescription Medication', 'Driver Condition'], 'illness': ['Illness', 'Driver Condition'], 'illnes': ['Illness', 'Driver Condition'], 'alcohol involvement': ['Alcohol Involvement', 'Driver Condition'], 'fell asleep': ['Fell Asleep', 'Driver Condition'], 'drugs (illegal)': ['Drugs (Illegal)', 'Driver Condition'], 'traffic control disregarded': ['Traffic Control Disregarded', 'Traffic Violation'], 'unsafe lane changing': ['Unsafe Lane Changing', 'Traffic Violation'], 'backing unsafely': ['Backing Unsafely', 'Traffic Violation'], 'failure to yield right-of-way': ['Failure to Yield Right-of-Way', 'Traffic Violation'], 'following too closely': ['Following Too Closely', 'Traffic Violation'], 'turning improperly': ['Turning Improperly', 'Traffic Violation'], 'passing too closely': ['Passing Too Closely', 'Traffic Violation'], 'passing or lane usage improper': ['Passing or Lane Usage Improper', 'Traffic Violation'], 'unsafe speed': ['Unsafe Speed', 'Traffic Violation'], 'aggressive driving/road rage': ['Aggressive Driving/Road Rage', 'Traffic Violation'], 'failure to keep right': ['Failure to Keep Right', 'Traffic Violation'], 'driver inexperience': ['Driver Inexperience', 'Traffic Violation'], 'other vehicular': ['Other Vehicular Defect', 'Vehicle Defect'], 'brakes defective': ['Brakes Defective', 'Vehicle Defect'], 'oversized vehicle': ['Oversized Vehicle', 'Vehicle Defect'], 'steering failure': ['Steering Failure', 'Vehicle Defect'], 'tire failure/inadequate': ['Tire Failure/Inadequate', 'Vehicle Defect'], 'accelerator defective': ['Accelerator Defective', 'Vehicle Defect'], 'driverless/runaway vehicle': ['Driverless/Runaway Vehicle', 'Vehicle Defect'], 'other lighting defects': ['Other Lighting Defects', 'Vehicle Defect'], 'headlights defective': ['Headlights Defective', 'Vehicle Defect'], 'tow hitch defective': ['Tow Hitch Defective', 'Vehicle Defect'], 'windshield inadequate': ['Windshield Inadequate', 'Vehicle Defect'], 'tinted windows': ['Tinted Windows', 'Vehicle Defect'], 'pavement slippery': ['Pavement Slippery', 'Environmental'], 'glare': ['Glare', 'Environmental'], 'pavement defective': ['Pavement Defective', 'Environmental'], 'obstruction/debris': ['Obstruction/Debris', 'Environmental'], 'lane marking improper/inadequate': ['Lane Marking Improper/Inadequate', 'Environmental'], 'traffic control device improper/non-working': ['Traffic Control Device Improper/Non-Working', 'Environmental'], 'shoulders defective/improper': ['Shoulders Defective/Improper', 'Environmental'], 'animals action': ['Animals Action', 'Environmental'], 'reaction to uninvolved vehicle': ['Reaction to Uninvolved Vehicle', 'Other'], 'view obstructed/limited': ['View Obstructed/Limited', 'Other'], 'reaction to other uninvolved vehicle': ['Reaction to Other Uninvolved Vehicle', 'Other'], 'pedestrian/bicyclist/other pedestrian error/confusion': ['Pedestrian/Bicyclist Error', 'Other'], 'vehicle vandalism': ['Vehicle Vandalism', 'Other'], 'unspecified': ['Unspecified', 'Unknown']}
 
 raw_factors = pd.concat([vehicles_df['contributing_factor_1'], vehicles_df['contributing_factor_2']]).dropna()
 raw_factors = raw_factors.str.strip().str.lower()
-
 mapped_data = []
 for raw_val in raw_factors.unique():
     if raw_val in factor_mapping:
@@ -257,11 +171,17 @@ for raw_val in raw_factors.unique():
 
 factor_df = pd.DataFrame(mapped_data).drop_duplicates().reset_index(drop=True)
 factor_df['Factor_ID'] = pd.Series(range(1, len(factor_df) + 1), dtype='Int64')
+
+# Statische Dimension: Kein Jahr im Dateinamen
 factor_df[['Factor_ID', 'Factor_Name', 'Factor_Category']].to_csv(OUTPUT_DIR / f'{PREFIX}Contributing_Factor.csv', index=False)
 
 locations = crashes_final[['latitude', 'longitude', 'zip_code', 'Precinct_ID']].drop_duplicates().reset_index(drop=True)
-locations['Location_ID'] = pd.Series(range(1, len(locations) + 1), dtype='Int64')
-locations[['Location_ID', 'longitude', 'latitude', 'zip_code', 'Precinct_ID']].to_csv(OUTPUT_DIR / f'{PREFIX}Location.csv', index=False)
+
+# ID mit Jahres-Offset generieren
+locations['Location_ID'] = pd.Series(range(1, len(locations) + 1), dtype='Int64') + ID_OFFSET
+
+# Ausgabe mit Jahr im Dateinamen
+locations[['Location_ID', 'longitude', 'latitude', 'zip_code', 'Precinct_ID']].to_csv(OUTPUT_DIR / f'{PREFIX}Location_{FILTER_YEAR}.csv', index=False)
 
 
 print("7. Erstelle Faktentabellen...")
@@ -272,75 +192,44 @@ crash_out.rename(columns={'collision_id': 'Collision_ID', 'clean_date': 'Crash_D
 crash_out['Collision_ID'] = crash_out['Collision_ID'].astype('Int64')
 crash_out['Weather_ID'] = crash_out['Weather_ID'].astype('Int64') 
 crash_out['Location_ID'] = crash_out['Location_ID'].astype('Int64') 
-crash_out[['Collision_ID', 'Crash_Date', 'Crash_Time', 'Location_ID', 'Weather_ID']].to_csv(OUTPUT_DIR / f'{PREFIX}Crash.csv', index=False)
+
+# Ausgabe mit Jahr im Dateinamen
+crash_out[['Collision_ID', 'Crash_Date', 'Crash_Time', 'Location_ID', 'Weather_ID']].to_csv(OUTPUT_DIR / f'{PREFIX}Crash_{FILTER_YEAR}.csv', index=False)
 
 valid_collision_ids = crash_out['Collision_ID'].unique()
 vehicles_filtered = vehicles_df[vehicles_df['collision_id'].isin(valid_collision_ids)].copy()
 persons_filtered = persons_df[persons_df['collision_id'].isin(valid_collision_ids)].copy()
 
 v_type = vehicles_filtered['vehicle_type'].str.upper().fillna('')
-
 cond_school_bus = v_type.str.contains('SCH|SCL', regex=True)
 cond_bus = v_type.str.contains('BUS|MTA|OMNIBUS|COACH|ACCESS|SHUTTLE|TRANSI', regex=True)
-
 cond_fire = v_type.str.contains('FIRE|FDNY|NYFD|LADDER', regex=True)
 cond_amb = v_type.str.contains('AMBULANCE|AMB|EMS|EMT', regex=True)
 cond_pol = v_type.str.contains('POLICE|NYPD|PATROL|RMP', regex=True)
 cond_emg = v_type.str.contains('EMERGENCY|AMU|RESCUE|GOV|ARMY', regex=True)
-
 cond_garbage = v_type.str.contains('GARB|GARGAGE|SANITA|DSNY|TRASH|SWEEP|BROOM', regex=True)
 cond_delivery = v_type.str.contains('DELIV|DELV|COURIER|FEDEX|FED E|FEDERAL EX|UPS|MAIL|POST|USPS|U-HAUL|U HAUL|UHAUL|U-HAL', regex=True)
 cond_commercial = v_type.str.contains('COMMERCIAL|COM|FREIGHT|VENDOR|BOBCAT|BACKHOE|LIFT|ICE CREAM|FORK|CRANE', regex=True)
 cond_truck = v_type.str.contains('TRUCK|TRK|TRU|TRACT|TRAC|TRAIL|BOX|DUMP|PICK|P/U|FLAT|TOW|CHASSIS', regex=True)
-
 cond_taxi = v_type.str.contains('TAXI|CAB', regex=True)
 cond_livery = v_type.str.contains('LIMO|LIVERY|UBER|LYFT', regex=True)
-
 cond_pedicab = v_type.str.contains('PEDICAB|PEDI CAB|RICKSHAW', regex=True)
 cond_escooter = v_type.str.contains('E-SCO|E-SKA|HOVER|BOARD|SEGWAY|ONEWHEEL', regex=True)
 cond_ebike = v_type.str.contains('E-BIKE|ELECTRIC|ELETRIC|E-BI', regex=True)
 cond_bike = v_type.str.contains('BIKE|BICYCLE|CYCL', regex=True)
-
 cond_moped = v_type.str.contains('MOPED|MOP|REVEL', regex=True)
 cond_scooter = v_type.str.contains('SCOOT|SCOT|SCO|VESPA', regex=True)
 cond_atv = v_type.str.contains('ATV|DIRT', regex=True)
 cond_moto = v_type.str.contains('MOTOR|MOTO', regex=True)
-
 cond_minivan = v_type.str.contains('MINI', regex=True)
 cond_van = v_type.str.contains('VAN|VAHN|TRANSIT|SPRIN|ECONO', regex=True)
-
 cond_wagon = v_type.str.contains('STATION', regex=True)
 cond_suv = v_type.str.contains('SUV|SPORT|SUBUR|SUBN|JEEP', regex=True)
-
 cond_pass = v_type.str.contains('PASS|SEDAN|SEDN|4 DR|2 DR|COUPE|CONV|CAR|AUTO|4D|2D|4S|SDN', regex=True)
-
 cond_unknown = (v_type == '') | (v_type == 'UNKNOWN')
 
-conditions = [
-    cond_school_bus, cond_bus, 
-    cond_fire, cond_amb, cond_pol, cond_emg, 
-    cond_garbage, cond_delivery, cond_commercial, cond_truck, 
-    cond_taxi, cond_livery, 
-    cond_pedicab, cond_escooter, cond_ebike, cond_bike, 
-    cond_moped, cond_scooter, cond_atv, cond_moto, 
-    cond_minivan, cond_van, 
-    cond_wagon, cond_suv, 
-    cond_pass, 
-    cond_unknown
-]
-
-choices = [
-    'Schoolbus', 'Bus', 
-    'Firetruck', 'Ambulance', 'Police', 'Emergency', 
-    'Sanitation', 'Delivery', 'Commercial', 'Truck', 
-    'Taxi', 'Livery', 
-    'Pedicab', 'Escooter', 'Ebike', 'Bicycle', 
-    'Moped', 'Scooter', 'ATV', 'Motorcycle', 
-    'Minivan', 'Van', 
-    'Wagon', 'SUV', 
-    'Passenger', 
-    'Unknown'
-]
+conditions = [cond_school_bus, cond_bus, cond_fire, cond_amb, cond_pol, cond_emg, cond_garbage, cond_delivery, cond_commercial, cond_truck, cond_taxi, cond_livery, cond_pedicab, cond_escooter, cond_ebike, cond_bike, cond_moped, cond_scooter, cond_atv, cond_moto, cond_minivan, cond_van, cond_wagon, cond_suv, cond_pass, cond_unknown]
+choices = ['Schoolbus', 'Bus', 'Firetruck', 'Ambulance', 'Police', 'Emergency', 'Sanitation', 'Delivery', 'Commercial', 'Truck', 'Taxi', 'Livery', 'Pedicab', 'Escooter', 'Ebike', 'Bicycle', 'Moped', 'Scooter', 'ATV', 'Motorcycle', 'Minivan', 'Van', 'Wagon', 'SUV', 'Passenger', 'Unknown']
 
 vehicles_filtered['clean_type'] = np.select(conditions, choices, default='Other')
 vehicle_merge = pd.merge(vehicles_filtered, vehicle_type_df, left_on='clean_type', right_on='Vehicle_Type_Name', how='left')
@@ -350,7 +239,9 @@ vehicle_out.rename(columns={'unique_id': 'Vehicle_ID', 'collision_id': 'Collisio
 vehicle_out.dropna(subset=['Vehicle_ID'], inplace=True)
 vehicle_out['Vehicle_ID'] = vehicle_out['Vehicle_ID'].astype('Int64')
 vehicle_out['Collision_ID'] = vehicle_out['Collision_ID'].astype('Int64')
-vehicle_out[['Vehicle_ID', 'Collision_ID', 'State_Registration', 'Vehicle_Year', 'Vehicle_Type_ID']].to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle.csv', index=False)
+
+# Ausgabe mit Jahr im Dateinamen
+vehicle_out[['Vehicle_ID', 'Collision_ID', 'State_Registration', 'Vehicle_Year', 'Vehicle_Type_ID']].to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle_{FILTER_YEAR}.csv', index=False)
 
 
 factors_melted = vehicles_filtered[['unique_id', 'contributing_factor_1', 'contributing_factor_2']].melt(
@@ -368,7 +259,9 @@ vehicle_factors_out.rename(columns={'unique_id': 'Vehicle_ID'}, inplace=True)
 
 vehicle_factors_out['Vehicle_ID'] = vehicle_factors_out['Vehicle_ID'].astype('Int64')
 vehicle_factors_out['Factor_ID'] = vehicle_factors_out['Factor_ID'].astype('Int64')
-vehicle_factors_out.to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle_Factors.csv', index=False)
+
+# Ausgabe mit Jahr im Dateinamen
+vehicle_factors_out.to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle_Factors_{FILTER_YEAR}.csv', index=False)
 
 person_out = persons_filtered[['unique_id', 'collision_id', 'vehicle_id', 'person_type', 'ped_role', 'person_injury', 'person_age', 'person_sex']].copy()
 person_out.rename(columns={
@@ -381,6 +274,8 @@ person_out.dropna(subset=['Person_ID'], inplace=True)
 person_out['Person_ID'] = person_out['Person_ID'].astype('Int64')
 person_out['Collision_ID'] = person_out['Collision_ID'].astype('Int64')
 person_out['Vehicle_ID'] = person_out['Vehicle_ID'].astype('Int64')
-person_out[['Person_ID', 'Collision_ID', 'Vehicle_ID', 'Person_Type', 'Person_Role', 'Person_Injury', 'Person_Age', 'Person_Sex']].to_csv(OUTPUT_DIR / f'{PREFIX}Person.csv', index=False)
+
+# Ausgabe mit Jahr im Dateinamen
+person_out[['Person_ID', 'Collision_ID', 'Vehicle_ID', 'Person_Type', 'Person_Role', 'Person_Injury', 'Person_Age', 'Person_Sex']].to_csv(OUTPUT_DIR / f'{PREFIX}Person_{FILTER_YEAR}.csv', index=False)
 
 print(f"Tabellen (für {FILTER_YEAR}) liegen in '{OUTPUT_DIR}'.")

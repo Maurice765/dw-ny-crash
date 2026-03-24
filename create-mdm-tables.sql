@@ -149,3 +149,12 @@ GROUP BY
     w.Weather_ID,
     cs.Computed_Severity_ID;
 GO
+
+-- Optimierung
+SELECT * INTO Fact_Crashes
+FROM vw_Fact_Crashes;
+GO
+
+CREATE CLUSTERED COLUMNSTORE INDEX CCI_Fact_Crashes 
+ON Fact_Crashes;
+GO
