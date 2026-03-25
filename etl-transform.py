@@ -100,7 +100,6 @@ print(f"4. Verarbeite die JFK Wetterdaten nur für {FILTER_YEAR}...")
 weather_raw_df['weather_datetime'] = pd.to_datetime(weather_raw_df['DATE'], errors='coerce')
 weather_raw_df = weather_raw_df.dropna(subset=['weather_datetime'])
 
-# Wetter auf das Jahr filtern UND DEN INDEX ZURÜCKSETZEN (Das ist der Fix!)
 weather_raw_df = weather_raw_df[weather_raw_df['weather_datetime'].dt.year == FILTER_YEAR].sort_values('weather_datetime')
 weather_raw_df = weather_raw_df.reset_index(drop=True)
 
@@ -152,7 +151,6 @@ crashes_final = pd.merge_asof(
 
 print("6. Erstelle restliche Dimensionstabellen...")
 
-# Statische Dimension: Kein Jahr im Dateinamen
 vehicle_types_data = [{'Type': 'Passenger', 'Category': 'Auto'}, {'Type': 'SUV', 'Category': 'Auto'}, {'Type': 'Wagon', 'Category': 'Auto'}, {'Type': 'Taxi', 'Category': 'Hire'}, {'Type': 'Livery', 'Category': 'Hire'}, {'Type': 'Bus', 'Category': 'Transit'}, {'Type': 'Schoolbus', 'Category': 'Transit'}, {'Type': 'Truck', 'Category': 'Commercial'}, {'Type': 'Commercial', 'Category': 'Commercial'}, {'Type': 'Delivery', 'Category': 'Commercial'}, {'Type': 'Sanitation', 'Category': 'Commercial'}, {'Type': 'Emergency', 'Category': 'Emergency'}, {'Type': 'Ambulance', 'Category': 'Emergency'}, {'Type': 'Police', 'Category': 'Emergency'}, {'Type': 'Firetruck', 'Category': 'Emergency'}, {'Type': 'Motorcycle', 'Category': 'Motorbike'}, {'Type': 'Moped', 'Category': 'Motorbike'}, {'Type': 'ATV', 'Category': 'Motorbike'}, {'Type': 'Bicycle', 'Category': 'Micromobility'}, {'Type': 'Ebike', 'Category': 'Micromobility'}, {'Type': 'Scooter', 'Category': 'Micromobility'}, {'Type': 'Escooter', 'Category': 'Micromobility'}, {'Type': 'Pedicab', 'Category': 'Micromobility'}, {'Type': 'Van', 'Category': 'Van'}, {'Type': 'Minivan', 'Category': 'Van'}, {'Type': 'Other', 'Category': 'Unknown'}, {'Type': 'Unknown', 'Category': 'Unknown'}]
 vehicle_type_df = pd.DataFrame(vehicle_types_data)
 vehicle_type_df.rename(columns={'Type': 'Vehicle_Type_Name', 'Category': 'Vehicle_Category'}, inplace=True)
@@ -172,7 +170,6 @@ for raw_val in raw_factors.unique():
 factor_df = pd.DataFrame(mapped_data).drop_duplicates().reset_index(drop=True)
 factor_df['Factor_ID'] = pd.Series(range(1, len(factor_df) + 1), dtype='Int64')
 
-# Statische Dimension: Kein Jahr im Dateinamen
 factor_df[['Factor_ID', 'Factor_Name', 'Factor_Category']].to_csv(OUTPUT_DIR / f'{PREFIX}Contributing_Factor.csv', index=False)
 
 locations = crashes_final[['latitude', 'longitude', 'zip_code', 'Precinct_ID']].drop_duplicates().reset_index(drop=True)
@@ -180,9 +177,7 @@ locations = crashes_final[['latitude', 'longitude', 'zip_code', 'Precinct_ID']].
 # ID mit Jahres-Offset generieren
 locations['Location_ID'] = pd.Series(range(1, len(locations) + 1), dtype='Int64') + ID_OFFSET
 
-# Ausgabe mit Jahr im Dateinamen
 locations[['Location_ID', 'longitude', 'latitude', 'zip_code', 'Precinct_ID']].to_csv(OUTPUT_DIR / f'{PREFIX}Location_{FILTER_YEAR}.csv', index=False)
-
 
 print("7. Erstelle Faktentabellen...")
 crash_merge = pd.merge(crashes_final, locations, on=['latitude', 'longitude', 'zip_code', 'Precinct_ID'], how='left')
@@ -193,7 +188,6 @@ crash_out['Collision_ID'] = crash_out['Collision_ID'].astype('Int64')
 crash_out['Weather_ID'] = crash_out['Weather_ID'].astype('Int64') 
 crash_out['Location_ID'] = crash_out['Location_ID'].astype('Int64') 
 
-# Ausgabe mit Jahr im Dateinamen
 crash_out[['Collision_ID', 'Crash_Date', 'Crash_Time', 'Location_ID', 'Weather_ID']].to_csv(OUTPUT_DIR / f'{PREFIX}Crash_{FILTER_YEAR}.csv', index=False)
 
 valid_collision_ids = crash_out['Collision_ID'].unique()
@@ -240,9 +234,7 @@ vehicle_out.dropna(subset=['Vehicle_ID'], inplace=True)
 vehicle_out['Vehicle_ID'] = vehicle_out['Vehicle_ID'].astype('Int64')
 vehicle_out['Collision_ID'] = vehicle_out['Collision_ID'].astype('Int64')
 
-# Ausgabe mit Jahr im Dateinamen
 vehicle_out[['Vehicle_ID', 'Collision_ID', 'State_Registration', 'Vehicle_Year', 'Vehicle_Type_ID']].to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle_{FILTER_YEAR}.csv', index=False)
-
 
 factors_melted = vehicles_filtered[['unique_id', 'contributing_factor_1', 'contributing_factor_2']].melt(
     id_vars=['unique_id'], value_vars=['contributing_factor_1', 'contributing_factor_2'], value_name='Raw_Factor'
@@ -260,7 +252,6 @@ vehicle_factors_out.rename(columns={'unique_id': 'Vehicle_ID'}, inplace=True)
 vehicle_factors_out['Vehicle_ID'] = vehicle_factors_out['Vehicle_ID'].astype('Int64')
 vehicle_factors_out['Factor_ID'] = vehicle_factors_out['Factor_ID'].astype('Int64')
 
-# Ausgabe mit Jahr im Dateinamen
 vehicle_factors_out.to_csv(OUTPUT_DIR / f'{PREFIX}Vehicle_Factors_{FILTER_YEAR}.csv', index=False)
 
 person_out = persons_filtered[['unique_id', 'collision_id', 'vehicle_id', 'person_type', 'ped_role', 'person_injury', 'person_age', 'person_sex']].copy()
@@ -275,7 +266,6 @@ person_out['Person_ID'] = person_out['Person_ID'].astype('Int64')
 person_out['Collision_ID'] = person_out['Collision_ID'].astype('Int64')
 person_out['Vehicle_ID'] = person_out['Vehicle_ID'].astype('Int64')
 
-# Ausgabe mit Jahr im Dateinamen
 person_out[['Person_ID', 'Collision_ID', 'Vehicle_ID', 'Person_Type', 'Person_Role', 'Person_Injury', 'Person_Age', 'Person_Sex']].to_csv(OUTPUT_DIR / f'{PREFIX}Person_{FILTER_YEAR}.csv', index=False)
 
 print(f"Tabellen (für {FILTER_YEAR}) liegen in '{OUTPUT_DIR}'.")
